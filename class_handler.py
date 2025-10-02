@@ -1,7 +1,10 @@
 from abc import ABC, abstractmethod
 from supabase import create_client
 import pandas as pd
+from dotenv import
 
+SUPABASE_URL
+SUPABASE_KEY
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
