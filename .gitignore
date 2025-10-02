@@ -1,5 +1,7 @@
-# Data
+# Data/
 data/
+data_hydro/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
