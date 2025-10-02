@@ -1,9 +1,10 @@
-from supabase import create_client
+from supabase import create_client, Client
 from abc import ABC, abstractmethod
 import pandas as pd
 
 
 # Exemple client Supabase à utiliser dans le client de la classe
+url = 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 types = ["hydro", "eolienne", "solar"]
 
@@ -44,10 +45,10 @@ class CSVDataHandler(DataHandler):
       df.iloc[:, 1].abs()
       if self.type not in types:
         print(f"Please enter any of types in this list : {types} ")
-      elif type == "hydro":
-        df.loc[(df.iloc[:, 1] < 200)  & (df.iloc[:, 1] > 0)]
-      elif type == "eolienne" or "solar":
-        df.loc[(df.iloc[:, 1] < 100)  & (df.iloc[:, 1] > 0)]
+      elif self.type == "hydro":
+        df.loc[(df.iloc[:, 1] <= 200)  & (df.iloc[:, 1] > 0)]
+      elif self.type == "eolienne" or "solar":
+        df.loc[(df.iloc[:, 1] <= 100)  & (df.iloc[:, 1] > 0)]
       df["date"] = pd.to_datetime(df["date"])
       df.dropna()
       return df
