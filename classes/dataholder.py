@@ -1,7 +1,13 @@
 from supabase import create_client
 from abc import ABC, abstractmethod
 import pandas as pd
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") 
 
 # Exemple client Supabase à utiliser dans le client de la classe
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -19,7 +25,7 @@ class DataHandler(ABC):
       pass
   
     @abstractmethod
-    def clean(self, df: pd.DataFrame) -> pd.Dataframe:
+    def clean(self, df: pd.DataFrame) -> pd.DataFrame:
       """Nettoie les données et retourne un Dataframe"""
       pass
 
@@ -40,7 +46,7 @@ class CSVDataHandler(DataHandler):
     def load(self) -> pd.DataFrame:
        return pd.read_csv(self.filepath)
 
-    def clean(self, type: str, df: pd.Dataframe) -> pd.DataFrame:
+    def clean(self, type: str, df: pd.DataFrame) -> pd.DataFrame:
       df.iloc[:, 1].abs()
       if self.type not in types:
         print(f"Please enter any of types in this list : {types} ")
