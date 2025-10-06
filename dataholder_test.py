@@ -1,14 +1,20 @@
-from supabase import create_client, Client
-import pandas as pd
+from supabase import create_client
 from dotenv import load_dotenv
-import os
 from dataholder import CSVDataHandler
+import os
+import pandas as pd
 
 # Exemple client Supabase à utiliser dans le client de la classe
 load_dotenv()
-url = os.getenv("SUPABASE_URL")
-key = os.getenv("SUPABASE_KEY")
-supabase = create_client(url, key)
 
-solar_data = CSVDataHandler(supabase, "solar", "data/prod_solaire_test.csv")
-solar_data.save_to_db("Solar_data")
+URL = os.getenv("SUPABASE_URL")
+SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+solar_data = CSVDataHandler(URL, SERVICE_ROLE_KEY, "solaire", "data/prod_solaire.csv")
+solar_data.save_to_db("Solaire_data")
+
+eolienne_data = CSVDataHandler(URL, SERVICE_ROLE_KEY, "eolienne", "data/prod_eolienne.csv")
+eolienne_data.save_to_db("Eolienne_data")
+
+hydro_data = CSVDataHandler(URL, SERVICE_ROLE_KEY, "hydro", "data/prod_hydro.csv")
+hydro_data.save_to_db("Hydro_data")
