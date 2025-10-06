@@ -78,7 +78,8 @@ if __name__ == "__main__":
     handler = HydroDataHandler(
         supabase,
         code_entite="Y321002101",
-        grandeurs=["QmM", "QmnJ", "HIXM", "HIXnJ"]
+        grandeurs=["QmM", "QmnJ", "HIXM", "HIXnJ"],
+        prod_csv_path="data/prod_hydro.csv"
     )
 
     handler.save_to_db("Hydro_data")
