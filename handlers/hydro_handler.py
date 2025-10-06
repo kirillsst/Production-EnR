@@ -47,11 +47,11 @@ class HydroDataHandler:
             aggfunc="mean"
         ).reset_index()
 
-        # Ajoutez id et prod_hydro (si vous ne les avez pas encore, vous pouvez indiquer None).
+        # Ajoutez id et prod_hydro.
         pivot_df.insert(0, "id", range(1, len(pivot_df) + 1))
         pivot_df.insert(1, "prod_hydro", None)
 
-        # Rennomer date_obs_elab → date
+        # Rennomer date_obs_elab -> date
         pivot_df.rename(columns={"date_obs_elab": "date"}, inplace=True)
 
         print(f"Données nettoyées et pivotées : {len(pivot_df)} lignes")
