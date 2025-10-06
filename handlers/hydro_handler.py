@@ -31,11 +31,11 @@ class HydroDataHandler:
         return df_all
 
     def clean(self, df: pd.DataFrame) -> pd.DataFrame:
-        df = df[
-            (df["code_statut"] == 4) &
-            (df["code_methode"] == 0) &
-            (df["code_qualification"] == 16)
-        ].copy()
+        # df = df[
+        #     (df["code_statut"] == 4) &
+        #     (df["code_methode"] == 0) &
+        #     (df["code_qualification"] == 16)
+        # ].copy()
 
         df["date_obs_elab"] = pd.to_datetime(df["date_obs_elab"]).dt.strftime("%Y-%m-%d")
         df = df[["date_obs_elab", "grandeur_hydro_elab", "resultat_obs_elab"]]
