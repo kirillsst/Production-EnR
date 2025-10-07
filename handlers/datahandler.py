@@ -1,86 +1,141 @@
-from supabase import create_client, Client
 from abc import ABC, abstractmethod
-import pandas as pd
-from dotenv import load_dotenv
+from datetime import datetime
 import os
+import pandas as pd
 import requests
-import numpy as np
-from hydro_handler import HydroDataHandler
+from dotenv import load_dotenv
+from supabase import create_client, Client
 
-# Exemple client Supabase à utiliser dans le client de la classe
 load_dotenv()
-url = os.getenv("SUPABASE_URL")
-role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-supabase = create_client(url, role_key)
-TYPES = ("hydro", "eolienne", "solar")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Classe abstraite
+TYPES = ("hydro", "eolienne", "solaire")
+API_URL = "https://hubeau.eaufrance.fr/api/v2/hydrometrie/obs_elab"
+
 class DataHandler(ABC):
-    def __init__(self, client, energy_type: str):
-      self.client = client
-      self.energy_type = energy_type
-    
+    def __init__(self, client: Client, type_energie: str):
+        self.client = client
+        self.type_energie = type_energie
+
     @abstractmethod
     def load(self) -> pd.DataFrame:
-      """Charge les données et retourne un DataFrame"""
-      pass
-  
+        """Charger les données en DataFrame"""
+        pass
+
     @abstractmethod
     def clean(self, df: pd.DataFrame) -> pd.DataFrame:
-      """Nettoie les données et retourne un Dataframe"""
-      pass
-    
-    def save_to_db(self, table_name: str):
-      """Sauvegarde le DataFrame dans Supabase"""
-      df = self.load()
-      df = self.clean(df)
-      records = df.to_dict(orient="records")
-      response = self.client.table(table_name).insert(records).execute()
-      return response
+        """Nettoyer et filtrer les données"""
+        pass
+
+    def save_to_bd(self, table_name: str) -> int:
+        """Sauvegarde les données dans Supabase et retourne le nombre de lignes"""
+        df = self.charger()
+        df = self.nettoyer(df)
+        df = df.astype(object).where(pd.notnull(df), None)
+        enregistrements = df.to_dict(orient="records")
+        if not enregistrements:
+            print("Aucune donnée à insérer.")
+            return 0
+        self.client.table(table_name).upsert(enregistrements, on_conflict="date").execute()
+        print(f"{len(enregistrements)} enregistrements insérés/mis à jour dans {table_name}")
+        return len(enregistrements)
 
 class CSVDataHandler(DataHandler):
-    def __init__(self, client, energy_type, path: str):
-       super().__init__(client, energy_type)
-       self.path = path
+    def __init__(self, client: Client, type_energie: str, chemin: str):
+        super().__init__(client, type_energie)
+        self.chemin = chemin
 
     def load(self) -> pd.DataFrame:
-       return pd.read_csv(self.path)
+        return pd.read_csv(self.chemin)
 
     def clean(self, df: pd.DataFrame) -> pd.DataFrame:
-      df.iloc[:, 1] = df.iloc[:, 1].abs()
-      if self.energy_type not in TYPES:
-        print(f"Please enter any of types in this list : {TYPES} ")
-      elif self.energy_type == "hydro":
-        df = df.loc[(df.iloc[:, 1] <= 200)  & (df.iloc[:, 1] > 0)].copy()
-      elif self.energy_type == "eolienne":
-        df = df.loc[(df.iloc[:, 1] <= 100)  & (df.iloc[:, 1] > 0)].copy()
-      elif self.energy_type == "solar":
-        df = df.loc[(df.iloc[:, 1] <= 100)  & (df.iloc[:, 1] > 0)].copy()
-        df.iloc[:, 1] = df.iloc[:, 1]*1.5
-      df["date"] = pd.to_datetime(df["date"])
-      df = df.dropna()
-      df["date"] = df["date"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-      return df
-      
-class DBDDataHandler(DataHandler):
-    def __init__(self, client, table_name: str):
-      super().__init__(client)
-      self.table_name = table_name
-  
-    def load(self) -> pd.DataFrame:
-      pass
+        if self.type_energie not in TYPES:
+            raise ValueError(f"Le type d'énergie doit être dans {TYPES}")
+        
+        df = df.copy()
+        valeur_col = "prod_hydro"
+        df[valeur_col] = df[valeur_col].abs()
 
-    def clean(self, df: pd.DataFrame) -> pd.DataFrame:
-       pass
+        if self.type_energie == "hydro":
+            df = df[(df[valeur_col] > 0) & (df[valeur_col] <= 200)]
+        elif self.type_energie == "eolienne":
+            df = df[(df[valeur_col] > 0) & (df[valeur_col] <= 100)]
+        elif self.type_energie == "solaire":
+            df = df[(df[valeur_col] > 0) & (df[valeur_col] <= 100)]
+            df[valeur_col] *= 1.5
 
-    
+        df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+        df = df.dropna(subset=[valeur_col, "date"])
+        return df[["date", valeur_col]]
+
+
+class HydroHandler:
+    def __init__(self, client: Client, code_entite: str, grandeurs: list, chemin_csv_prod: str):
+        self.client = client
+        self.code_entite = code_entite
+        self.grandeurs = grandeurs
+        self.csv_handler = CSVDataHandler(client, "hydro", chemin_csv_prod)
+
+    def load_api(self) -> pd.DataFrame:
+        toutes_donnees = []
+        for grandeur in self.grandeurs:
+            params = {"code_entite": self.code_entite, "grandeur_hydro_elab": grandeur, "size": 500}
+            response = requests.get(API_URL, params=params)
+            response.raise_for_status()
+            df = pd.DataFrame(response.json().get("data", []))
+            if not df.empty:
+                df["grandeur_hydro_elab"] = grandeur
+                toutes_donnees.append(df)
+        if toutes_donnees:
+            return pd.concat(toutes_donnees, ignore_index=True)
+        return pd.DataFrame()
+
+    def clean(self, df_api: pd.DataFrame) -> pd.DataFrame:
+        if df_api.empty:
+            print("Aucune donnée API")
+            return pd.DataFrame()
+
+        df_api["date"] = pd.to_datetime(df_api["date_obs_elab"]).dt.strftime("%Y-%m-%d")
+        df_api = df_api[["date", "grandeur_hydro_elab", "resultat_obs_elab"]]
+
+        df_pivot = df_api.pivot_table(
+            index="date",
+            columns="grandeur_hydro_elab",
+            values="resultat_obs_elab",
+            aggfunc="mean"
+        ).reset_index()
+
+        df_prod = self.csv_handler.load()
+        df_prod = self.csv_handler.clean(df_prod)
+
+        df_full = pd.merge(df_prod, df_pivot, on="date", how="left")
+
+        colonnes_grandeurs = self.grandeurs  # ["QmnJ", "HIXnJ"]
+        df_full = df_full[df_full[colonnes_grandeurs].fillna(0).sum(axis=1) > 0]
+        colonnes_a_remplir = ["prod_hydro"] + colonnes_grandeurs
+        df_full[colonnes_a_remplir] = df_full[colonnes_a_remplir].fillna(0)
+
+        return df_full
+
+    def save_to_bd(self, nom_table: str) -> int:
+        df_api = self.load_api()
+        df_clean = self.clean(df_api)
+        if df_clean.empty:
+            print("Aucune donnée à insérer dans la base")
+            return 0
+        enregistrements = df_clean.to_dict(orient="records")
+        self.client.table(nom_table).upsert(enregistrements, on_conflict="date").execute()
+        print(f"{len(enregistrements)} enregistrements insérés/mis à jour dans {nom_table}")
+        return len(enregistrements)
+
+
 if __name__ == "__main__":
-    handler = HydroDataHandler(
+    hydro_handler = HydroHandler(
         supabase,
         code_entite="Y321002101",
-        grandeurs=["QmM", "QmnJ", "HIXM", "HIXnJ"],
-        prod_csv_path="data/prod_hydro.csv"
+        grandeurs=["QmnJ", "HIXnJ"],
+        chemin_csv_prod="data/prod_hydro.csv"
     )
-
-    handler.save_to_db("Hydro_data")
-
+    hydro_handler.save_to_bd("Hydro_data")
