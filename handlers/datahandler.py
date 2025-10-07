@@ -81,7 +81,7 @@ class HydroHandler:
     def load_api(self) -> pd.DataFrame:
         toutes_donnees = []
         for grandeur in self.grandeurs:
-            params = {"code_entite": self.code_entite, "grandeur_hydro_elab": grandeur, "size": 500}
+            params = {"code_entite": self.code_entite, "grandeur_hydro_elab": grandeur, "size": 1500}
             response = requests.get(API_URL, params=params)
             response.raise_for_status()
             df = pd.DataFrame(response.json().get("data", []))
@@ -112,10 +112,34 @@ class HydroHandler:
 
         df_full = pd.merge(df_prod, df_pivot, on="date", how="left")
 
+        #with traitement
         colonnes_grandeurs = self.grandeurs  # ["QmnJ", "HIXnJ"]
         df_full = df_full[df_full[colonnes_grandeurs].fillna(0).sum(axis=1) > 0]
         colonnes_a_remplir = ["prod_hydro"] + colonnes_grandeurs
         df_full[colonnes_a_remplir] = df_full[colonnes_a_remplir].fillna(0)
+        
+
+        # without traitement
+        # df_full[self.grandeurs] = df_full[self.grandeurs].fillna(0)
+  
+        #with traitement
+        # Traitement les valeurs aberrantes
+        df_full = df_full[
+          (df_full["QmnJ"] > 0) & (df_full["QmnJ"] < 10000) &
+          (df_full["HIXnJ"] > 0) & (df_full["HIXnJ"] < 2000)
+        ]
+
+        for col in ["QmnJ", "HIXnJ"]:
+          Q1 = df_full[col].quantile(0.25)
+          Q3 = df_full[col].quantile(0.75)
+          IQR = Q3 - Q1
+          df_full = df_full[
+              (df_full[col] >= Q1 - 1.5 * IQR) & 
+              (df_full[col] <= Q3 + 1.5 * IQR)
+          ]
+
+        df_full = df_full.reset_index(drop=True)
+        df_full.insert(0, "id", df_full.index + 1)
 
         return df_full
 
