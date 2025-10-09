@@ -14,11 +14,13 @@ PORT = os.getenv("port")
 DBNAME = os.getenv("dbname")
 URL = os.getenv("SUPABASE_URL")
 SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-
-
 DATABASE_URL = f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
 
-solar_table = Database(URL, SERVICE_ROLE_KEY, DATABASE_URL, "Meteos_data")
-solar_table.Create()
-all_tables = Database(URL, SERVICE_ROLE_KEY, DATABASE_URL, "Meteos_data")
-all_tables.Create()
+# solar_table = Database(URL, SERVICE_ROLE_KEY, DATABASE_URL, "Meteo_data", "solar")
+# solar_table.Create()
+all_tables = Database(URL, SERVICE_ROLE_KEY, DATABASE_URL)
+
+
+# all_tables.create_table()
+# all_tables.drop_table()
+all_tables.fetch_data()

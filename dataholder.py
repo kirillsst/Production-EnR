@@ -14,7 +14,9 @@ TYPES = os.getenv("types")
 
 # Classe abstraite
 class DataHandler(ABC):
-    def __init__(self, url: str, service_key: str, energy_type: str):
+    def __init__(self, url: str, service_key: str, energy_type: str = None):
+      if energy_type is not None and energy_type not in TYPES:
+            raise ValueError(f"energy_type doit être parmi {TYPES} ou None pour tous, reçu: {energy_type}")
       self.client = create_client(url, service_key)
       self.energy_type = energy_type
     
@@ -33,6 +35,7 @@ class DataHandler(ABC):
       df = self.load()
       df = self.clean(df)
       records = df.to_dict(orient="records")
+      self.client.table(table_name).delete().neq("id", -1).execute()
       response = (self.client.table(table_name).upsert(records, on_conflict="date").execute())
       return response
 
@@ -46,9 +49,7 @@ class CSVDataHandler(DataHandler):
 
     def clean(self, df: pd.DataFrame) -> pd.DataFrame:
       df.iloc[:, 1] = df.iloc[:, 1].abs()
-      if self.energy_type not in TYPES:
-        print(f"Please enter any of types in this list : {TYPES} ")
-      elif self.energy_type == "hydro":
+      if self.energy_type == "hydro":
         df = df.loc[(df.iloc[:, 1] <= 200)  & (df.iloc[:, 1] > 0)].copy()
         df = df.rename(columns={"date_obs_elab" : "date"})
       elif self.energy_type == "eolienne":
