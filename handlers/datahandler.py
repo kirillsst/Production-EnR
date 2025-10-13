@@ -160,6 +160,6 @@ if __name__ == "__main__":
         supabase,
         code_entite="Y321002101",
         grandeurs=["QmnJ", "HIXnJ"],
-        chemin_csv_prod="data/prod_hydro.csv"
+        chemin_csv_prod="~/production_enr/data/prod_hydro.csv"
     )
     hydro_handler.save_to_bd("Hydro_data")
