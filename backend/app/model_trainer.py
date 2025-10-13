@@ -17,13 +17,13 @@ class ModelTrain:
         self.producer_type = producer_type
         self.features = features
         self.target = target
-        self.save_dir = Path(save_dir)
+        base_dir = Path(__file__).resolve().parent
+        self.save_dir = base_dir / save_dir
+        self.save_dir.mkdir(parents=True, exist_ok=True)
         self.random_state = random_state
         
         self.model = None
         self.metrics = {}
-        
-        self.save_dir.mkdir(parents=True, exist_ok=True)
         
     def train(self,
               data: pd.DataFrame,
@@ -86,8 +86,7 @@ class ModelTrain:
         self.metrics["R2_CV_std"] = np.std(cv_scores)
         
         # Sauvegarde du modèle
-        print(Path(__file__).parent )
-        model_path = Path(__file__).parent / self.save_dir / f"{self.producer_type}_random_forest_model.pkl"
+        model_path = self.save_dir / f"{self.producer_type}_random_forest_model.pkl"
         joblib.dump(self.model, model_path)
         print(f"Modèle sauvegardé ici : {model_path}")
         
