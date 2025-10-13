@@ -86,7 +86,8 @@ class ModelTrain:
         self.metrics["R2_CV_std"] = np.std(cv_scores)
         
         # Sauvegarde du modèle
-        model_path = self.save_dir / f"{self.producer_type}_random_forest_model.pkl"
+        print(Path(__file__).parent )
+        model_path = Path(__file__).parent / self.save_dir / f"{self.producer_type}_random_forest_model.pkl"
         joblib.dump(self.model, model_path)
         print(f"Modèle sauvegardé ici : {model_path}")
         
