@@ -21,10 +21,10 @@ class Database():
         self.eolienne_table = None
         self.hydro_table = None
     
-    def create_table(self):
+    def create_tables(self):
         if self.energy_type in (None, "solaire"):
             self.solaire_table = Table(
-                "Solaire_data",
+                "solaire_data",
                 self.meta,
                 Column('id', Integer, primary_key=True),
                 Column('date', DateTime, nullable=True, unique=True),
@@ -34,7 +34,7 @@ class Database():
                 )
         if self.energy_type in (None, "eolienne"):
             self.eolienne_table = Table(
-                "Eolienne_data",
+                "eolienne_data",
                 self.meta,
                 Column('id', Integer, primary_key=True),
                 Column('date', DateTime, nullable=True, unique=True),
@@ -45,7 +45,7 @@ class Database():
                 )
         if self.energy_type in (None, "hydro"):
             self.hydro_table = Table(
-                "Hydro_data",
+                "hydro_data",
                 self.meta,
                 Column('id', Integer, primary_key=True),
                 Column('date', DateTime, nullable=True, unique=True),
@@ -61,19 +61,19 @@ class Database():
             conn.execute(text(f'ALTER TABLE "{"public"}"."{self.eolienne_table}" ENABLE ROW LEVEL SECURITY;'))
             conn.execute(text(f'ALTER TABLE "{"public"}"."{self.hydro_table}" ENABLE ROW LEVEL SECURITY;'))
 
-    def drop_table(self):
+    def drop_tables(self):
         with self.engine.begin() as conn:
             if self.energy_type in (None, "solaire"):
                 if self.solaire_table is None:
-                    self.solaire_table = Table("Solaire_data", self.meta, autoload_with=self.engine)
+                    self.solaire_table = Table("solaire_data", self.meta, autoload_with=self.engine)
                     self.solaire_table.drop(self.engine, checkfirst=True)
             if self.energy_type in (None, "eolienne"):
                 if self.eolienne_table is None:
-                    self.eolienne_table = Table("Eolienne_data", self.meta, autoload_with=self.engine)
+                    self.eolienne_table = Table("eolienne_data", self.meta, autoload_with=self.engine)
                     self.eolienne_table.drop(self.engine, checkfirst=True)
             if self.energy_type in (None, "hydro"):
                 if self.hydro_table is None:
-                    self.hydro_table = Table("Hydro_data", self.meta, autoload_with=self.engine)
+                    self.hydro_table = Table("hydro_data", self.meta, autoload_with=self.engine)
                     self.hydro_table.drop(self.engine, checkfirst=True)
 
     def fetch_data(self, file_path:str = os.path.join(os.getcwd(), "data/train/")):
@@ -82,21 +82,41 @@ class Database():
         if self.energy_type in (None, "solaire"):
             if self.solaire_table is None:
                 with self.engine.begin() as conn:
-                    self.solaire_table = Table("Solaire_data", self.meta, autoload_with=self.engine)
+                    self.solaire_table = Table("solaire_data", self.meta, autoload_with=self.engine)
                     result_solaire = conn.execute(self.solaire_table.select())
                     df_solaire = pd.DataFrame(sorted(result_solaire))
                     df_solaire.to_csv(file_path+"solaire_train.csv")
         if self.energy_type in (None, "eolienne"):
             if self.eolienne_table is None:
                 with self.engine.begin() as conn:
-                    self.eolienne_table = Table("Eolienne_data", self.meta, autoload_with=self.engine)
+                    self.eolienne_table = Table("eolienne_data", self.meta, autoload_with=self.engine)
                     result_eolienne = conn.execute(self.eolienne_table.select())
                     df_eolienne = pd.DataFrame(sorted(result_eolienne))
                     df_eolienne.to_csv(file_path+"eolienne_train.csv")
         if self.energy_type in (None, "hydro"):
             if self.hydro_table is None:
                 with self.engine.begin() as conn:
-                    self.hydro_table = Table("Hydro_data", self.meta, autoload_with=self.engine)
+                    self.hydro_table = Table("hydro_data", self.meta, autoload_with=self.engine)
                     result_hydro = conn.execute(self.hydro_table.select())
                     df_hydro = pd.DataFrame(sorted(result_hydro))
                     df_hydro.to_csv(file_path+"hydro_train.csv")
+
+    def drop_na(self):
+        if self.energy_type in (None, "solaire"):
+            with self.engine.begin() as conn:
+                conn.execute(text("""
+                    DELETE FROM solaire_data
+                    WHERE "prod_solaire" IS NULL OR "date" IS NULL
+                """))
+        if self.energy_type in (None, "eolienne"):
+            with self.engine.begin() as conn:
+                conn.execute(text("""
+                    DELETE FROM eolienne_data
+                    WHERE "prod_eolienne" IS NULL OR "date" IS NULL
+                """))
+        if self.energy_type in (None, "hydro"):
+            with self.engine.begin() as conn:
+                conn.execute(text("""
+                    DELETE FROM hydro_data
+                    WHERE "prod_hydro" IS NULL OR "date" IS NULL OR "QmnJ" IS NULL OR "HIXnJ" IS NULL;
+                """))

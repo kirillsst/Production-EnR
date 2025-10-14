@@ -51,21 +51,45 @@ class CSVDataHandler(DataHandler):
        return pd.read_csv(self.path)
 
     def clean(self, df: pd.DataFrame) -> pd.DataFrame:
-      df.iloc[:, 1] = df.iloc[:, 1].abs()
-      if self.energy_type == "hydro":
-        df = df.loc[(df.iloc[:, 1] <= 200)  & (df.iloc[:, 1] > 0)].copy()
-        df = df.rename(columns={"date_obs_elab" : "date"})
-      elif self.energy_type == "eolienne":
-        df = df.loc[(df.iloc[:, 1] <= 100)  & (df.iloc[:, 1] > 0)].copy()
-      elif self.energy_type == "solaire":
-        df = df.loc[(df.iloc[:, 1] <= 100)  & (df.iloc[:, 1] > 0)].copy()
-        df.iloc[:, 1] = df.iloc[:, 1]*1.5
-      df["date"] = pd.to_datetime(df["date"])
-      df = df.sort_values(by="date")
-      df = df.drop_duplicates(subset="date", keep="first")
-      df = df.dropna().reset_index(drop=True)
-      df["date"] = df["date"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-      return df
+        df = df.copy()
+
+        if self.energy_type == "hydro" and "date" not in df.columns and "date_obs_elab" in df.columns:
+            df = df.rename(columns={"date_obs_elab": "date"})
+
+        if "date" not in df.columns:
+            if isinstance(df.index, (pd.DatetimeIndex, pd.PeriodIndex)):
+                df = df.reset_index().rename(columns={"index": "date"})
+            else:
+                raise KeyError("La colonne 'date' est absente et l'index n'est pas temporel.")
+
+        df["date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
+
+        prod_col_map = {
+            "hydro": "prod_hydro",
+            "eolienne": "prod_eolienne",
+            "solaire": "prod_solaire",
+        }
+        if self.energy_type not in prod_col_map:
+            raise ValueError(f"energy_type inconnu: {self.energy_type}")
+
+        prod_col = prod_col_map[self.energy_type]
+        if prod_col not in df.columns:
+            raise KeyError(f"Colonne '{prod_col}' absente du DataFrame.")
+
+        df[prod_col] = pd.to_numeric(df[prod_col], errors="coerce").abs()
+
+        bounds_max = {"hydro": 200.0, "eolienne": 100.0, "solaire": 100.0}
+        df = df[(df[prod_col] > 0) & (df[prod_col] <= bounds_max[self.energy_type])]
+
+        if self.energy_type == "solaire":
+            df[prod_col] = df[prod_col] * 1.5
+
+        df = df.dropna(subset=["date", prod_col])
+        df = df.sort_values("date").drop_duplicates("date", keep="first").reset_index(drop=True)
+        df["date"] = df["date"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        return df[["date", prod_col]]
+
 
 
 class APIDataHandler(DataHandler):
@@ -77,18 +101,18 @@ class APIDataHandler(DataHandler):
         
         if self.energy_type == "solaire":
             
-            cache_session = requests_cache.CachedSession('.cache', expire_after = -1)
-            retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
-            openmeteo = openmeteo_requests.Client(session = retry_session)
-            params = {
+            retry_session = retry(requests.Session(), retries=5, backoff_factor=0.2)
+            openmeteo_solaire = openmeteo_requests.Client(session=retry_session)
+            params_solaire = {
               "latitude": 43.6109,
               "longitude": 3.8763,
               "start_date": "2016-09-01",
-              "end_date": "2025-09-25",
+              "end_date": "2025-09-29",
+              "timezone": "UTC",
               "hourly": ["global_tilted_irradiance", "temperature_2m"],
               "tilt": 35,
             }
-            responses = openmeteo.weather_api(self.api_url, params=params)
+            responses = openmeteo_solaire.weather_api(self.api_url, params=params_solaire)
             hourly = responses[0].Hourly()
             hourly_global_tilted_irradiance = hourly.Variables(0).ValuesAsNumpy()
             hourly_temperature_2m = hourly.Variables(1).ValuesAsNumpy()
@@ -102,24 +126,23 @@ class APIDataHandler(DataHandler):
             hourly_data["global_tilted_irradiance"] = hourly_global_tilted_irradiance
             hourly_data["temperature_2m"] = hourly_temperature_2m
             hourly_dataframe = pd.DataFrame(data = hourly_data)
-            daily_dataframe= hourly_dataframe.resample('D', on='date').sum()
+            daily_dataframe= hourly_dataframe.resample('D', on='date').mean()
             return daily_dataframe
 
-        if self.energy_type == "eolienne":
+        elif self.energy_type == "eolienne":
             
-            cache_session = requests_cache.CachedSession('.cache', expire_after = -1)
-            retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
-            openmeteo = openmeteo_requests.Client(session = retry_session)
-            params = {
+            retry_session = retry(requests.Session(), retries=5, backoff_factor=0.2)
+            openmeteo_eolienne = openmeteo_requests.Client(session=retry_session)
+            params_eolienne = {
               "latitude": 43.6109,
               "longitude": 3.8763,
               "start_date": "2016-09-01",
-              "end_date": "2025-09-27",
+              "end_date": "2025-09-29",
+              "timezone": "UTC",
               "daily": ["temperature_2m_mean", "wind_speed_10m_mean", "pressure_msl_mean"],
-              "tilt": 35,
             }
-            responses = openmeteo.weather_api(self.api_url, params=params)
-            daily = response.Daily()
+            responses = openmeteo_eolienne.weather_api(self.api_url, params=params_eolienne)
+            daily = responses[0].Daily()
             daily_temperature_2m_mean = daily.Variables(0).ValuesAsNumpy()
             daily_wind_speed_10m_mean = daily.Variables(1).ValuesAsNumpy()
             daily_pressure_msl_mean = daily.Variables(2).ValuesAsNumpy()
@@ -139,7 +162,7 @@ class APIDataHandler(DataHandler):
             return daily_dataframe
 
 
-        if self.energy_type == "hydro":
+        elif self.energy_type == "hydro":
             all_data = []
             code_entite = "Y321002101"
             grandeurs = ["QmnJ", "HIXnJ"]
@@ -163,15 +186,31 @@ class APIDataHandler(DataHandler):
 
     def clean(self, df: pd.DataFrame) -> pd.DataFrame:
         if self.energy_type == "solaire":
-            print(df)
-            return df
+          if "date" in df.columns:
+            df = df.reset_index(drop=True)
+          else:
+            df = df.reset_index().rename(columns={"index": "date"})
+
+          df["date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
+          df = df.sort_values("date").drop_duplicates("date", keep="first")
+          df = df.dropna(subset=["date"]).reset_index(drop=True)
+          df["date"] = df["date"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+          return df
         
-        if self.energy_type == "eolienne":
-            print(df)
-            return df
+        elif self.energy_type == "eolienne":
+          if "date" in df.columns:
+            df = df.reset_index(drop=True)
+          else:
+            df = df.reset_index().rename(columns={"index": "date"})
+
+          df["date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
+          df = df.sort_values("date").drop_duplicates("date", keep="first")
+          df = df.dropna(subset=["date"]).reset_index(drop=True)
+          df["date"] = df["date"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+          return df
         
         if self.energy_type == "hydro":
-          start="2022-01-01"
+          start="2022-09-01"
           end="2025-09-29"
           expected_cols=("QmnJ", "HIXnJ")
 
@@ -232,8 +271,8 @@ class APIDataHandler(DataHandler):
               df_pivot[col] = df_pivot[col].where((df_pivot[col] >= low) & (df_pivot[col] <= high))
 
           out = df_pivot.reset_index().rename(columns={"index": "date"})
-          out["date"] = out["date"].dt.strftime("%Y-%m-%d")
-          out = out[["date","QmnJ", "HIXnJ"]].fillna(0)
+          out["date"] = out["date"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+          out = out[["date","QmnJ", "HIXnJ"]].dropna()
 
 
 cache_session = requests_cache.CachedSession('.cache', expire_after = -1)
