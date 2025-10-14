@@ -31,17 +31,17 @@ def main(energy_type: str):
     # Dictionnaire de configuration
     ENERGY_CONFIG = {
         "hydro": {
-            "table": "Hydro_data",
+            "table": "hydro_data",
             "features": ["QmnJ", "HIXnJ"],
             "target": "prod_hydro",
         },
         "eolienne": {
-            "table": "Eolienne_data",
+            "table": "eolienne_data",
             "features": ["wind_speed_10m_mean", "pressure_msl_mean", "temperature_2m_mean"],
             "target": "prod_eolienne",
         },
         "solaire": {
-            "table": "Solaire_data",
+            "table": "solaire_data",
             "features": ["global_tilted_irradiance", "temperature_2m"],
             "target": "prod_solaire",
         },
@@ -54,7 +54,7 @@ def main(energy_type: str):
 
     # Chargement des données depuis Supabase
     print(f"Chargement des données depuis la table {config['table']} ...")
-    data = supabase.table(config["table"]).select("*").execute()
+    data = supabase.table(config["table"]).select("*").order("date", desc=False).limit(4000).execute()
     df = pd.DataFrame(data.data)
 
     if df.empty:

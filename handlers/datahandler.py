@@ -162,4 +162,4 @@ if __name__ == "__main__":
         grandeurs=["QmnJ", "HIXnJ"],
         chemin_csv_prod="~/production_enr/data/prod_hydro.csv"
     )
-    hydro_handler.save_to_bd("Hydro_data")
+    hydro_handler.save_to_bd("hydro_data")
