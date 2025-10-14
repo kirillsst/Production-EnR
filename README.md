@@ -1,2 +1,2 @@
 # production_enr
-Projet de prédiction de production d'énergie
+Projet de prédiction de production d'énergie (Hydro, Solaire, Eolienne)
