@@ -21,6 +21,6 @@ DATABASE_URL = f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?
 all_tables = Database(URL, SERVICE_ROLE_KEY, DATABASE_URL)
 
 
-# all_tables.create_table()
+all_tables.create_table()
 # all_tables.drop_table()
-all_tables.fetch_data()
+# all_tables.drop_table()
