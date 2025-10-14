@@ -56,6 +56,6 @@ class DBDDataHandler(DataHandler):
    def __init__(self, url: str):
       self.url = url
   
-  def load(self, url: str):
-   df = 
+   def load(self, url: str):
+      pass 
        
