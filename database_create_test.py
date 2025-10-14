@@ -2,7 +2,7 @@ from supabase import create_client, Client
 from sqlalchemy import create_engine, MetaData, Table, Column, Float, Integer, DateTime
 from sqlalchemy.pool import NullPool
 from dotenv import load_dotenv
-from database_create import Database
+from backend.app.database_manager import Database
 import os
 
 load_dotenv()

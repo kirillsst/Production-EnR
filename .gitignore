@@ -6,6 +6,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 /data
+/database_create_test.py
+/dataholder_test.py
+
 # C extensions
 *.so
 

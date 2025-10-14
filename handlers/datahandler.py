@@ -1,165 +1,277 @@
+from supabase import create_client, Client
 from abc import ABC, abstractmethod
-from datetime import datetime
-import os
+from dotenv import load_dotenv
+from retry_requests import retry
+from datetime import date
 import pandas as pd
 import requests
-from dotenv import load_dotenv
-from supabase import create_client, Client
+import openmeteo_requests
+import requests_cache
+import os
+
+# Exemple client Supabase à utiliser dans le client de la classe
 
 load_dotenv()
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+TYPES = os.getenv("types")
+CODE_ENTITY = os.getenv("code_entite")
+HYDRO_API_URL = os.getenv("hydro_api_url")
 
-TYPES = ("hydro", "eolienne", "solaire")
-API_URL = "https://hubeau.eaufrance.fr/api/v2/hydrometrie/obs_elab"
-
+# Classe abstraite
 class DataHandler(ABC):
-    def __init__(self, client: Client, type_energie: str):
-        self.client = client
-        self.type_energie = type_energie
-
+    def __init__(self, url: str, service_key: str, energy_type: str = None):
+      if energy_type is not None and energy_type not in TYPES:
+            raise ValueError(f"energy_type doit être parmi {TYPES} ou None pour tous, reçu: {energy_type}")
+      self.client = create_client(url, service_key)
+      self.energy_type = energy_type
+    
     @abstractmethod
     def load(self) -> pd.DataFrame:
-        """Charger les données en DataFrame"""
-        pass
-
+      """Charge les données et retourne un DataFrame"""
+      pass
+  
     @abstractmethod
     def clean(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Nettoyer et filtrer les données"""
-        pass
-
-    def save_to_bd(self, table_name: str) -> int:
-        """Sauvegarde les données dans Supabase et retourne le nombre de lignes"""
-        df = self.charger()
-        df = self.nettoyer(df)
-        df = df.astype(object).where(pd.notnull(df), None)
-        enregistrements = df.to_dict(orient="records")
-        if not enregistrements:
-            print("Aucune donnée à insérer.")
-            return 0
-        self.client.table(table_name).upsert(enregistrements, on_conflict="date").execute()
-        print(f"{len(enregistrements)} enregistrements insérés/mis à jour dans {table_name}")
-        return len(enregistrements)
+      """Nettoie les données et retourne un Dataframe"""
+      pass
+    
+    def save_to_db(self, table_name: str):
+      """Sauvegarde le DataFrame dans Supabase"""
+      df = self.load()
+      df = self.clean(df)
+      records = df.to_dict(orient="records")
+      response = (self.client.table(table_name).upsert(records, on_conflict="date").execute())
+      return response
 
 class CSVDataHandler(DataHandler):
-    def __init__(self, client: Client, type_energie: str, chemin: str):
-        super().__init__(client, type_energie)
-        self.chemin = chemin
+    def __init__(self, url, service_key, energy_type, path: str):
+       super().__init__(url, service_key, energy_type)
+       self.path = path
 
     def load(self) -> pd.DataFrame:
-        return pd.read_csv(self.chemin)
+       return pd.read_csv(self.path)
 
     def clean(self, df: pd.DataFrame) -> pd.DataFrame:
-        if self.type_energie not in TYPES:
-            raise ValueError(f"Le type d'énergie doit être dans {TYPES}")
-        
         df = df.copy()
-        valeur_col = "prod_hydro"
-        df[valeur_col] = df[valeur_col].abs()
 
-        if self.type_energie == "hydro":
-            df = df[(df[valeur_col] > 0) & (df[valeur_col] <= 200)]
-        elif self.type_energie == "eolienne":
-            df = df[(df[valeur_col] > 0) & (df[valeur_col] <= 100)]
-        elif self.type_energie == "solaire":
-            df = df[(df[valeur_col] > 0) & (df[valeur_col] <= 100)]
-            df[valeur_col] *= 1.5
+        if self.energy_type == "hydro" and "date" not in df.columns and "date_obs_elab" in df.columns:
+            df = df.rename(columns={"date_obs_elab": "date"})
 
-        df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
-        df = df.dropna(subset=[valeur_col, "date"])
-        return df[["date", valeur_col]]
+        if "date" not in df.columns:
+            if isinstance(df.index, (pd.DatetimeIndex, pd.PeriodIndex)):
+                df = df.reset_index().rename(columns={"index": "date"})
+            else:
+                raise KeyError("La colonne 'date' est absente et l'index n'est pas temporel.")
+
+        df["date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
+
+        prod_col_map = {
+            "hydro": "prod_hydro",
+            "eolienne": "prod_eolienne",
+            "solaire": "prod_solaire",
+        }
+        if self.energy_type not in prod_col_map:
+            raise ValueError(f"energy_type inconnu: {self.energy_type}")
+
+        prod_col = prod_col_map[self.energy_type]
+        if prod_col not in df.columns:
+            raise KeyError(f"Colonne '{prod_col}' absente du DataFrame.")
+
+        df[prod_col] = pd.to_numeric(df[prod_col], errors="coerce").abs()
+
+        bounds_max = {"hydro": 200.0, "eolienne": 100.0, "solaire": 100.0}
+        df = df[(df[prod_col] > 0) & (df[prod_col] <= bounds_max[self.energy_type])]
+
+        if self.energy_type == "solaire":
+            df[prod_col] = df[prod_col] * 1.5
+
+        df = df.dropna(subset=["date", prod_col])
+        df = df.sort_values("date").drop_duplicates("date", keep="first").reset_index(drop=True)
+        df["date"] = df["date"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        return df[["date", prod_col]]
 
 
-class HydroHandler:
-    def __init__(self, client: Client, code_entite: str, grandeurs: list, chemin_csv_prod: str):
-        self.client = client
-        self.code_entite = code_entite
-        self.grandeurs = grandeurs
-        self.csv_handler = CSVDataHandler(client, "hydro", chemin_csv_prod)
 
-    def load_api(self) -> pd.DataFrame:
-        toutes_donnees = []
-        for grandeur in self.grandeurs:
-            params = {"code_entite": self.code_entite, "grandeur_hydro_elab": grandeur, "size": 1500}
-            response = requests.get(API_URL, params=params)
-            response.raise_for_status()
-            df = pd.DataFrame(response.json().get("data", []))
-            if not df.empty:
-                df["grandeur_hydro_elab"] = grandeur
-                toutes_donnees.append(df)
-        if toutes_donnees:
-            return pd.concat(toutes_donnees, ignore_index=True)
-        return pd.DataFrame()
+class APIDataHandler(DataHandler):
+    def __init__(self, url, service_key, energy_type, api_url :str):
+        super().__init__(url, service_key, energy_type)
+        self.api_url = api_url
 
-    def clean(self, df_api: pd.DataFrame) -> pd.DataFrame:
-        if df_api.empty:
-            print("Aucune donnée API")
-            return pd.DataFrame()
-
-        df_api["date"] = pd.to_datetime(df_api["date_obs_elab"]).dt.strftime("%Y-%m-%d")
-        df_api = df_api[["date", "grandeur_hydro_elab", "resultat_obs_elab"]]
-
-        df_pivot = df_api.pivot_table(
-            index="date",
-            columns="grandeur_hydro_elab",
-            values="resultat_obs_elab",
-            aggfunc="mean"
-        ).reset_index()
-
-        df_prod = self.csv_handler.load()
-        df_prod = self.csv_handler.clean(df_prod)
-
-        df_full = pd.merge(df_prod, df_pivot, on="date", how="left")
-
-        #with traitement
-        colonnes_grandeurs = self.grandeurs  # ["QmnJ", "HIXnJ"]
-        df_full = df_full[df_full[colonnes_grandeurs].fillna(0).sum(axis=1) > 0]
-        colonnes_a_remplir = ["prod_hydro"] + colonnes_grandeurs
-        df_full[colonnes_a_remplir] = df_full[colonnes_a_remplir].fillna(0)
+    def load(self) -> pd.DataFrame:
         
+        if self.energy_type == "solaire":
+            
+            retry_session = retry(requests.Session(), retries=5, backoff_factor=0.2)
+            openmeteo_solaire = openmeteo_requests.Client(session=retry_session)
+            params_solaire = {
+              "latitude": 43.6109,
+              "longitude": 3.8763,
+              "start_date": "2016-09-01",
+              "end_date": "2025-09-29",
+              "timezone": "UTC",
+              "hourly": ["global_tilted_irradiance", "temperature_2m"],
+              "tilt": 35,
+            }
+            responses = openmeteo_solaire.weather_api(self.api_url, params=params_solaire)
+            hourly = responses[0].Hourly()
+            hourly_global_tilted_irradiance = hourly.Variables(0).ValuesAsNumpy()
+            hourly_temperature_2m = hourly.Variables(1).ValuesAsNumpy()
 
-        # without traitement
-        # df_full[self.grandeurs] = df_full[self.grandeurs].fillna(0)
-  
-        #with traitement
-        # Traitement les valeurs aberrantes
-        df_full = df_full[
-          (df_full["QmnJ"] > 0) & (df_full["QmnJ"] < 10000) &
-          (df_full["HIXnJ"] > 0) & (df_full["HIXnJ"] < 2000)
-        ]
+            hourly_data = {"date": pd.date_range(
+            start = pd.to_datetime(hourly.Time(), unit = "s", utc = True),
+            end = pd.to_datetime(hourly.TimeEnd(), unit = "s", utc = True),
+            freq = pd.Timedelta(seconds = hourly.Interval()),
+            inclusive = "left"
+            )}
+            hourly_data["global_tilted_irradiance"] = hourly_global_tilted_irradiance
+            hourly_data["temperature_2m"] = hourly_temperature_2m
+            hourly_dataframe = pd.DataFrame(data = hourly_data)
+            daily_dataframe= hourly_dataframe.resample('D', on='date').mean()
+            return daily_dataframe
 
-        for col in ["QmnJ", "HIXnJ"]:
-          Q1 = df_full[col].quantile(0.25)
-          Q3 = df_full[col].quantile(0.75)
-          IQR = Q3 - Q1
-          df_full = df_full[
-              (df_full[col] >= Q1 - 1.5 * IQR) & 
-              (df_full[col] <= Q3 + 1.5 * IQR)
-          ]
+        elif self.energy_type == "eolienne":
+            
+            retry_session = retry(requests.Session(), retries=5, backoff_factor=0.2)
+            openmeteo_eolienne = openmeteo_requests.Client(session=retry_session)
+            params_eolienne = {
+              "latitude": 43.6109,
+              "longitude": 3.8763,
+              "start_date": "2016-09-01",
+              "end_date": "2025-09-29",
+              "timezone": "UTC",
+              "daily": ["temperature_2m_mean", "wind_speed_10m_mean", "pressure_msl_mean"],
+            }
+            responses = openmeteo_eolienne.weather_api(self.api_url, params=params_eolienne)
+            daily = responses[0].Daily()
+            daily_temperature_2m_mean = daily.Variables(0).ValuesAsNumpy()
+            daily_wind_speed_10m_mean = daily.Variables(1).ValuesAsNumpy()
+            daily_pressure_msl_mean = daily.Variables(2).ValuesAsNumpy()
 
-        df_full = df_full.reset_index(drop=True)
-        df_full.insert(0, "id", df_full.index + 1)
+            daily_data = {"date": pd.date_range(
+            start = pd.to_datetime(daily.Time(), unit = "s", utc = True),
+            end = pd.to_datetime(daily.TimeEnd(), unit = "s", utc = True),
+            freq = pd.Timedelta(seconds = daily.Interval()),
+            inclusive = "left"
+            )}
 
-        return df_full
+            daily_data["temperature_2m_mean"] = daily_temperature_2m_mean
+            daily_data["wind_speed_10m_mean"] = daily_wind_speed_10m_mean
+            daily_data["pressure_msl_mean"] = daily_pressure_msl_mean
 
-    def save_to_bd(self, nom_table: str) -> int:
-        df_api = self.load_api()
-        df_clean = self.clean(df_api)
-        if df_clean.empty:
-            print("Aucune donnée à insérer dans la base")
-            return 0
-        enregistrements = df_clean.to_dict(orient="records")
-        self.client.table(nom_table).upsert(enregistrements, on_conflict="date").execute()
-        print(f"{len(enregistrements)} enregistrements insérés/mis à jour dans {nom_table}")
-        return len(enregistrements)
+            daily_dataframe = pd.DataFrame(data = daily_data)
+            return daily_dataframe
 
 
-if __name__ == "__main__":
-    hydro_handler = HydroHandler(
-        supabase,
-        code_entite="Y321002101",
-        grandeurs=["QmnJ", "HIXnJ"],
-        chemin_csv_prod="~/production_enr/data/prod_hydro.csv"
-    )
-    hydro_handler.save_to_bd("hydro_data")
+        elif self.energy_type == "hydro":
+            all_data = []
+            code_entite = "Y321002101"
+            grandeurs = ["QmnJ", "HIXnJ"]
+
+            for grandeur in grandeurs:
+                params = {
+                            "code_entite": code_entite, 
+                            "grandeur_hydro_elab": grandeur, 
+                            "date_debut_obs" : "2022-09-01",
+                            "date_fin_obs": "2025-09-29",
+                            "size": 1500,}
+                response = requests.get(self.api_url, params=params)
+                response.raise_for_status()
+                df = pd.DataFrame(response.json().get("data", []))
+                if not df.empty:
+                    df["grandeur_hydro_elab"] = grandeur
+                    all_data.append(df)
+            if all_data:
+                return pd.concat(all_data, ignore_index=True)
+            return df
+
+    def clean(self, df: pd.DataFrame) -> pd.DataFrame:
+        if self.energy_type == "solaire":
+          if "date" in df.columns:
+            df = df.reset_index(drop=True)
+          else:
+            df = df.reset_index().rename(columns={"index": "date"})
+
+          df["date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
+          df = df.sort_values("date").drop_duplicates("date", keep="first")
+          df = df.dropna(subset=["date"]).reset_index(drop=True)
+          df["date"] = df["date"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+          return df
+        
+        elif self.energy_type == "eolienne":
+          if "date" in df.columns:
+            df = df.reset_index(drop=True)
+          else:
+            df = df.reset_index().rename(columns={"index": "date"})
+
+          df["date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
+          df = df.sort_values("date").drop_duplicates("date", keep="first")
+          df = df.dropna(subset=["date"]).reset_index(drop=True)
+          df["date"] = df["date"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+          return df
+        
+        if self.energy_type == "hydro":
+          start="2022-09-01"
+          end="2025-09-29"
+          expected_cols=("QmnJ", "HIXnJ")
+
+          if df.empty:
+              print("Aucune donnée API")
+              end = end or date.today().isoformat()
+              idx = pd.date_range(start, end, freq="D")
+              out = pd.DataFrame(index=idx).reset_index().rename(columns={"index": "date"})
+              out.insert(0, "id", range(1, len(out) + 1))
+              return out
+          
+          df = df.copy()
+          df["date"] = pd.to_datetime(df["date_obs_elab"]).dt.normalize()
+          df = df[["date", "grandeur_hydro_elab", "resultat_obs_elab"]]
+
+          df_pivot = (
+              df.pivot_table(
+                  index="date",
+                  columns="grandeur_hydro_elab",
+                  values="resultat_obs_elab",
+                  aggfunc="mean"
+              )
+              .sort_index()
+          )
+
+          end = end or date.today().isoformat()
+          full_idx = pd.date_range(start, end, freq="D")
+          df_pivot = df_pivot.reindex(full_idx)
+
+          present_cols = [c for c in expected_cols if c in df_pivot.columns]
+          if not present_cols:
+              out = df_pivot.reset_index().rename(columns={"index": "date"})
+              out.insert(0, "id", range(1, len(out) + 1))
+              return out
+
+          df_pivot = df_pivot[present_cols]
+          for col in df_pivot.columns:
+              df_pivot[col] = pd.to_numeric(df_pivot[col], errors="coerce")
+
+          bounds_max = {
+              "QmnJ": 10000,
+              "HIXnJ": 2000 
+          }
+          for col in df_pivot.columns:
+              df_pivot[col] = df_pivot[col].where(df_pivot[col] > 0)
+              if col in bounds_max:
+                  df_pivot[col] = df_pivot[col].where(df_pivot[col] < bounds_max[col])
+
+          for col in df_pivot.columns:
+              series = df_pivot[col].dropna()
+              if series.empty:
+                  continue
+              Q1 = series.quantile(0.25)
+              Q3 = series.quantile(0.75)
+              IQR = Q3 - Q1
+              low = Q1 - 1.5 * IQR
+              high = Q3 + 1.5 * IQR
+              df_pivot[col] = df_pivot[col].where((df_pivot[col] >= low) & (df_pivot[col] <= high))
+
+          out = df_pivot.reset_index().rename(columns={"index": "date"})
+          out["date"] = out["date"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+          out = out[["date","QmnJ", "HIXnJ"]].dropna()
+
+          return out
