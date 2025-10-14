@@ -5,9 +5,9 @@ import pandas as pd
 st.set_page_config(page_title="Production Eolienne", page_icon="⚡", layout="wide")
 st.title("Simulation Eolienne")
 
-wind_speed_10m_mean = st.number_input("Wind speed 10m mean", min_value=0.0, max_value=5000.0, value=1000.0)
-pressure_msl_mean = st.number_input("Pressure msl mean", min_value=0.0, max_value=2000.0, value=400.0)
-temperature_2m_mean = st.number_input("Temperature 2m mean", min_value=0.0, max_value=2000.0, value=400.0)
+wind_speed_10m_mean = st.number_input("Wind speed 10m mean", min_value=0.0, max_value=5000.0)
+pressure_msl_mean = st.number_input("Pressure msl mean", min_value=0.0, max_value=2000.0)
+temperature_2m_mean = st.number_input("Temperature 2m mean", min_value=0.0, max_value=2000.0)
 
 if st.button("Prédire"):
     try:

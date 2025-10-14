@@ -5,8 +5,8 @@ import pandas as pd
 st.set_page_config(page_title="Production Solaire", page_icon="⚡", layout="wide")
 st.title("Simulation Solaire")
 
-global_tilted_irradiance = st.number_input("Global tilted irradiance", min_value=0.0, max_value=5000.0, value=1000.0)
-temperature_2m = st.number_input("Temperature 2m", min_value=0.0, max_value=2000.0, value=400.0)
+global_tilted_irradiance = st.number_input("Global tilted irradiance", min_value=0.0, max_value=5000.0)
+temperature_2m = st.number_input("Temperature 2m", min_value=0.0, max_value=2000.0)
 
 if st.button("Prédire"):
     try:

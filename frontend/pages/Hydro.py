@@ -5,8 +5,8 @@ import pandas as pd
 st.set_page_config(page_title="Production Hydro", page_icon="⚡", layout="wide")
 st.title("Simulation Hydroélectrique")
 
-qmnj = st.number_input("QmnJ (débit moyen journalier, en m³/s — quantité moyenne d’eau écoulée par jour)", min_value=0.0, max_value=5000.0, value=1000.0, help="Représente le débit moyen de la rivière sur une journée, en mètres cubes par seconde.")
-hixnj = st.number_input("HIXnJ (indice hydrométrique journalier, mm — hauteur normalisée de l’eau)", min_value=0.0, max_value=2000.0, value=400.0,  help="Reflète la hauteur d’eau moyenne du jour, exprimée en millimètres, après normalisation.")
+qmnj = st.number_input("QmnJ (débit moyen journalier, en m³/s — quantité moyenne d’eau écoulée par jour)", min_value=0.0, max_value=5000.0, help="Représente le débit moyen de la rivière sur une journée, en mètres cubes par seconde.")
+hixnj = st.number_input("HIXnJ (indice hydrométrique journalier, mm — hauteur normalisée de l’eau)", min_value=0.0, max_value=2000.0, help="Reflète la hauteur d’eau moyenne du jour, exprimée en millimètres, après normalisation.")
 
 if st.button("Prédire"):
     try:
