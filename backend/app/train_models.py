@@ -37,12 +37,12 @@ def main(energy_type: str):
         },
         "eolienne": {
             "table": "Eolienne_data",
-            "features": ["wind_speed3", "temp_press", "wind_speed_10m_mean (km/h)"],
+            "features": ["wind_speed_10m_mean", "pressure_msl_mean", "temperature_2m_mean"],
             "target": "prod_eolienne",
         },
         "solaire": {
             "table": "Solaire_data",
-            "features": ["irradiance", "temperature"],
+            "features": ["global_tilted_irradiance", "temperature_2m"],
             "target": "prod_solaire",
         },
     }
