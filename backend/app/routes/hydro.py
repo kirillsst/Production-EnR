@@ -12,7 +12,7 @@ class HydroInput(BaseModel):
 @router.post("/predict/hydro")
 def predict_hydro(data: HydroInput):
     if data.QmnJ == 0 or data.HIXnJ == 0:
-        return {"error": "QmnJ et HIXnJ devraient être plus nombreux 0"}
+        return {"error": "QmnJ et HIXnJ devraient être supérieur à 0"}
     
     df = pd.DataFrame([data.model_dump()])
     model = ModelTrain.load("hydro", ["QmnJ", "HIXnJ"], "prod_hydro")

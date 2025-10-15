@@ -14,7 +14,7 @@ class EolienneInput(BaseModel):
 @router.post("/predict/eolienne")
 def predict_wind(data: EolienneInput):
     if data.wind_speed_10m_mean == 0 or data.pressure_msl_mean == 0 or data.temperature_2m_mean == 0:
-        return {"error": " wind_speed_10m_mean, pressure_msl_mean et temperature_2m_mean devraient être plus nombreux 0"}
+        return {"error": " wind_speed_10m_mean, pressure_msl_mean et temperature_2m_mean doit être supérieur à 0"}
     
     df = pd.DataFrame([data.model_dump()])
     # Création des features 
