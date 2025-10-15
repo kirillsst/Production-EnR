@@ -63,7 +63,7 @@ production_enr/
 ## Installation
 ### Cloner le projet
 ```
-git clone https://github.com/GaetanCSimplon/production_enr.git
+git clone https://github.com/kirillsst/Production-EnR.git
 
 cd production_enr
 ```
