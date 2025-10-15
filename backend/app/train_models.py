@@ -37,7 +37,13 @@ def main(energy_type: str):
         },
         "eolienne": {
             "table": "eolienne_data",
-            "features": ["wind_speed_10m_mean", "pressure_msl_mean", "temperature_2m_mean"],
+            "features": [
+                "wind_speed_10m_mean",
+                "pressure_msl_mean",
+                "temperature_2m_mean",
+                "wind_speed3",
+                "temp_press"
+            ],
             "target": "prod_eolienne",
         },
         "solaire": {
@@ -63,6 +69,13 @@ def main(energy_type: str):
 
     print(f"{len(df)} lignes chargées depuis Supabase.")
 
+    # === Création des features spécifiques pour l’éolien ===
+    if energy_type == "eolienne":
+        df["wind_speed3"] = df["wind_speed_10m_mean"] ** 3
+        df["temp_press"] = df["temperature_2m_mean"] * df["pressure_msl_mean"]
+
+        print("Features supplémentaires créées : wind_speed3 et temp_press")
+
     # Entraînement du modèle
     print(f"Entraînement du modèle pour {energy_type.upper()}...")
     trainer = ModelTrain(
@@ -71,6 +84,7 @@ def main(energy_type: str):
         target=config["target"]
     )
     trainer.train(df)
+
     print(f"Modèle {energy_type.upper()} entraîné et sauvegardé avec succès !")
 
 
