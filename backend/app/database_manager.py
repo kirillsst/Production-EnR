@@ -76,31 +76,6 @@ class Database():
                     self.hydro_table = Table("hydro_data", self.meta, autoload_with=self.engine)
                     self.hydro_table.drop(self.engine, checkfirst=True)
 
-    def fetch_data(self, file_path:str = os.path.join(os.getcwd(), "data/train/")):
-        if os.access(file_path, os.F_OK) is False:
-            os.makedirs(file_path)
-        if self.energy_type in (None, "solaire"):
-            if self.solaire_table is None:
-                with self.engine.begin() as conn:
-                    self.solaire_table = Table("solaire_data", self.meta, autoload_with=self.engine)
-                    result_solaire = conn.execute(self.solaire_table.select())
-                    df_solaire = pd.DataFrame(sorted(result_solaire))
-                    df_solaire.to_csv(file_path+"solaire_train.csv")
-        if self.energy_type in (None, "eolienne"):
-            if self.eolienne_table is None:
-                with self.engine.begin() as conn:
-                    self.eolienne_table = Table("eolienne_data", self.meta, autoload_with=self.engine)
-                    result_eolienne = conn.execute(self.eolienne_table.select())
-                    df_eolienne = pd.DataFrame(sorted(result_eolienne))
-                    df_eolienne.to_csv(file_path+"eolienne_train.csv")
-        if self.energy_type in (None, "hydro"):
-            if self.hydro_table is None:
-                with self.engine.begin() as conn:
-                    self.hydro_table = Table("hydro_data", self.meta, autoload_with=self.engine)
-                    result_hydro = conn.execute(self.hydro_table.select())
-                    df_hydro = pd.DataFrame(sorted(result_hydro))
-                    df_hydro.to_csv(file_path+"hydro_train.csv")
-
     def drop_na(self):
         if self.energy_type in (None, "solaire"):
             with self.engine.begin() as conn:
